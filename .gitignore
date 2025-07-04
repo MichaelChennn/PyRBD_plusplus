@@ -13,3 +13,6 @@ pyrbd++/build/*
 !pyrbd++/build/.gitkeep
 
 __pycache__/
+
+# too large topologies
+topologies/Germany_50/Pathset_Germany_50.csv
