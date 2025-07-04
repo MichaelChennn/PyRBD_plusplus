@@ -1,0 +1,15 @@
+.vscode/
+
+build/*
+!build/.gitkeep
+
+benchmarks/*
+!benchmarks/.gitkeep
+
+tests/*
+!tests/.gitkeep
+
+pyrbd++/build/*
+!pyrbd++/build/.gitkeep
+
+__pycache__/
