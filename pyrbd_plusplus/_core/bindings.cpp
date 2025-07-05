@@ -10,7 +10,7 @@ using namespace pyrbdpp::mcs;
 using namespace pyrbdpp::pathset;
 using namespace pyrbdpp::sdp;
 
-PYBIND11_MODULE(pyrbd_plusplus, m)
+PYBIND11_MODULE(pyrbd_plusplus_cpp, m)
 {
     m.doc() = "PyRBD++ - Reliability Block Diagram analysis library";
 

@@ -13,7 +13,7 @@ def relabel_graph_A_dict(G, A_dic):
     return G_relabel, A_dic, relabel_mapping
 
 # relabel boolean expression back and convert the boolean expression to a mathematical expression
-def relabel_boolexpr_to_mathexpr(bool_expr):
+def relabel_boolexpr_to_str(bool_expr):
     expr = "["
     bool_expr_len = len(bool_expr)
     for num_list in bool_expr:
@@ -35,3 +35,49 @@ def relabel_boolexpr_to_mathexpr(bool_expr):
             expr += " + "
     expr += "]"
     return expr
+
+def sdp_boolexpr_to_str(sdp_lst_lst):
+    sdp_str = ""
+    sdp_lst_lst_len = len(sdp_lst_lst)
+    for sdp_lst in sdp_lst_lst:
+        sdp_lst_len = len(sdp_lst)
+        sdp_str += "["
+        for sdp in sdp_lst:
+
+            if sdp.isComplementary():
+                sdp_str += "-["
+            else:
+                sdp_str += "["
+
+            sdp_elem_len = len(sdp.getSet())
+            for sdp_elem in sdp.getSet():
+                if sdp_elem_len == 1:
+                    sdp_str += f"{sdp_elem}"
+                else:
+                    sdp_str += f"{sdp_elem} * "
+                sdp_elem_len -= 1
+            sdp_str += "]"
+
+            sdp_lst_len -= 1
+
+            if sdp_lst_len > 0:
+                sdp_str += " * "
+
+        sdp_str += "]"
+        sdp_lst_lst_len -= 1
+        if sdp_lst_lst_len > 0:
+            sdp_str += " + "
+
+    return sdp_str.strip()
+
+
+def sdp_boolexpr_length(sdp_lst_lst):
+    expr_len = 0
+  
+    for sdp_lst in sdp_lst_lst:
+        
+        sdp_lst_len = len(sdp_lst)
+        
+        expr_len += sdp_lst_len
+
+    return expr_len

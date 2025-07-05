@@ -1,5 +1,6 @@
 # set source files
 set(SRC
+    common.cpp
     mcs.cpp
     pathset.cpp
     sdp.cpp
@@ -19,35 +20,34 @@ FetchContent_MakeAvailable(pybind11)
 # find OpenMP
 find_package(OpenMP REQUIRED)
 
-# create the library
-add_library(pyrbd_plusplus MODULE ${SRC})
-
-
-# link the pybind11 library
-target_link_libraries(pyrbd_plusplus PRIVATE pybind11::module)
-
-# set complie options
-target_compile_options(pyrbd_plusplus PRIVATE
-    -Wall -Wextra -O3 -march=native
+# pybind11 module
+pybind11_add_module(pyrbd_plusplus_cpp ${SRC})
+set_target_properties(pyrbd_plusplus_cpp PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 )
+
+# # create the library
+# add_library(pyrbd_plusplus_cpp MODULE ${SRC})
+
+
+# # link the pybind11 library
+# target_link_libraries(pyrbd_plusplus_cpp PRIVATE pybind11::module)
+
 
 # Link OpenMP if found
 if(OpenMP_CXX_FOUND)
-    target_link_libraries(pyrbd_plusplus PUBLIC OpenMP::OpenMP_CXX)
+    target_link_libraries(pyrbd_plusplus_cpp PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
-# set the include directories
-target_include_directories(pyrbd_plusplus PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+# set complie options
+target_compile_options(pyrbd_plusplus_cpp PRIVATE
+    -Wall -O3 -march=native
 )
 
-# set the executable properties
-set_target_properties(pyrbd_plusplus PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    OUTPUT_NAME "pyrbd_plusplus"
-    PREFIX ""
-    SUFFIX ".so"
+# set the include directories
+target_include_directories(pyrbd_plusplus_cpp PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
 )
 
 # clean target

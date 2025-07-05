@@ -1,7 +1,6 @@
 .vscode/
 
 build/*
-!build/.gitkeep
 
 benchmarks/*
 !benchmarks/.gitkeep
@@ -16,3 +15,6 @@ __pycache__/
 
 # too large topologies
 topologies/Germany_50/Pathset_Germany_50.csv
+
+# Build so files
+*.so

@@ -1,21 +1,23 @@
 import os
 import pickle as pkl
-import networkx as nx
 import pandas as pd
 import ast
 from itertools import combinations
 from tqdm import tqdm
 
-import pyrbd_plusplus._core as pyrbd
+from .algorithms.sets import minimalcuts_optimized, minimalpaths
+from .utils import relabel_boolexpr_to_str, sdp_boolexpr_to_str, sdp_boolexpr_length
 
-from pyrbd_plusplus.algorithms import minimalcuts_optimized
-from pyrbd_plusplus.algorithms import minimalpaths
-from pyrbd_plusplus.utils import relabel_boolexpr_to_mathexpr
+import pyrbd_plusplus._core.pyrbd_plusplus_cpp as cpp
 
 # Load data from a pickle file
-def read_graph(directory, top):
-    with open(os.path.join(directory, "Pickle_" + top + ".pickle"), "rb") as handle:
-        f = pkl.load(handle)
+def read_graph(directory, top, file_path=None):
+    if file_path:
+        with open(file_path, "rb") as handle:
+            f = pkl.load(handle)
+    else:
+        with open(os.path.join(directory, "Pickle_" + top + ".pickle"), "rb") as handle:
+            f = pkl.load(handle)
     G = f[0]
     pos = f[1]
     lable = f[2]
@@ -24,7 +26,6 @@ def read_graph(directory, top):
 
 # Read mincutset from a csv file
 def read_mincutset(directory, top):
-
     # Read the mincutset from a csv file
     df = pd.read_csv(os.path.join(directory, "Mincutset_" + top + ".csv"))
 
@@ -132,14 +133,14 @@ def save_boolean_expression_from_mincutset(directory, top):
         mincutsets[i] = [[node + 1 for node in cutset] for cutset in mincutsets[i]]
 
         # Build the boolean expression from the mincutset
-        expression = build.rbd_bindings.MCSToProbaset(src, dst, mincutsets[i])
+        expression = cpp.mcs.to_probaset(src, dst, mincutsets[i])
 
         # Append the boolean expression data
         boolean_expressions_data.append(
             {
                 "source": src,
                 "target": dst,
-                "boolean_expression": relabel_boolexpr_to_mathexpr(expression),
+                "boolean_expression": relabel_boolexpr_to_str(expression),
                 "length": len(expression),
             }
         )
@@ -174,14 +175,14 @@ def save_boolean_expression_from_pathset(directory, top):
         pathsets[i] = [[node + 1 for node in path] for path in pathsets[i]]
 
         # Build the boolean expression from the pathset
-        expression = build.rbd_bindings.pathSetToProbaset(src, dst, pathsets[i])
-
+        expression = cpp.pathset.to_probaset(src, dst, pathsets[i])
+        
         # Append the boolean expression data
         boolean_expressions_data.append(
             {
                 "source": src,
                 "target": dst,
-                "boolean_expression": relabel_boolexpr_to_mathexpr(expression),
+                "boolean_expression": relabel_boolexpr_to_str(expression),
                 "length": len(expression),
             }
         )
@@ -191,4 +192,76 @@ def save_boolean_expression_from_pathset(directory, top):
     boolean_expressions_df.to_csv(
         os.path.join(directory, f"BoolExprPS_{top}.csv"), index=False
     )
+    
+def save_boolean_expression_from_sdp(directory, top):
+    # Read the mincutset from the csv file
+    pathsets = read_pathset(directory, top)
+
+    # Read the graph from the pickle file
+    G, _, _ = read_graph(directory, top)
+
+    # Create node pairs
+    node_pairs = list(combinations(G.nodes(), 2))
+
+    # Initialize a list to store boolean expressions data
+    boolean_expressions_data = []
+
+    for i, (src, dst) in tqdm(
+        enumerate(node_pairs), desc=f"Saving Boolean Expressions from SDP for {top}",
+        leave=False, total=len(node_pairs)
+    ):
+        # Relabel pathset by adding 1 to ensure no 0 in the set
+        pathsets[i] = [[node + 1 for node in path] for path in pathsets[i]]
+
+        # Build the SDP set from the pathset
+        expression = cpp.sdp.to_sdp_set(src, dst, pathsets[i])
+
+        # Convert the SDP set to a string representation and calculate the expression length
+        bool_expr_str = sdp_boolexpr_to_str(expression)
+
+        # Append the result to the list
+        boolean_expressions_data.append({
+            "src": src,
+            "dst": dst,
+            "boolean_expression": bool_expr_str,
+            "length": sdp_boolexpr_length(expression)
+        })
+    
+    # Save the boolean expressions to a CSV file
+    boolean_expressions_df = pd.DataFrame(boolean_expressions_data)
+    boolean_expressions_df.to_csv(
+        os.path.join(directory, f"BoolExprSDP_{top}.csv"), index=False
+    )
+
+def dataset_preparation(directory, topologies):
+    """
+    Prepare the dataset by saving pathsets, mincutsets, and boolean expressions.
+    Args:
+        directory (str): The directory where the datasets will be saved.
+        topologies (list): A list of topology names to process.
+    """
+    for top in topologies:
+        directory = f"topologies/{top}"
+        save_pathset(directory, top)
+        if top not in ["Germany_50", "Nobel_EU"]:
+            save_mincutset(directory, top)
+        if top not in ["Germany_50"]:
+            save_boolean_expression_from_mincutset(directory, top)
+            save_boolean_expression_from_pathset(directory, top)
+            save_boolean_expression_from_sdp(directory, top)
+
+if __name__ == "__main__":
+    # Data set
+    topologies = [
+        "Abilene",
+        "dfn-bwin",
+        "Germany_17",
+        "HiberniaUk",
+        "polska",
+        "Nobel_EU",
+        "Germany_50",
+    ]
+
+    # Prepare the dataset
+    dataset_preparation("topologies", topologies)
     
