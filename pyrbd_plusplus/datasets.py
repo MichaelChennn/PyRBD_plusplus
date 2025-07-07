@@ -26,20 +26,41 @@ def read_graph(directory, top, file_path=None):
 
 # Read mincutset from a csv file
 def read_mincutset(directory, top):
+    """Read mincutset and lengths from a csv file.
+
+    Args:
+        directory (str): The directory containing the CSV file.
+        top (str): The name of the topology.
+
+    Returns:
+        tuple: A tuple containing two lists - the mincutsets and their lengths.
+    """
     # Read the mincutset from a csv file
     df = pd.read_csv(os.path.join(directory, "Mincutset_" + top + ".csv"))
 
-    # Convert the 'min-cutsets' column from string representation to actual list
+    # Convert the 'mincutsets' column from string representation to actual list
     df["mincutsets"] = df["mincutsets"].apply(ast.literal_eval)
 
-    # Extract the 'min-cutsets' column as a list
+    # Extract the 'mincutsets' column as a list
     mincutsets = df["mincutsets"].values.tolist()
+    
+    # Extract the 'length' column as a list
+    lengths = df["length"].values.tolist()
 
-    return mincutsets
+    return mincutsets, lengths
 
 
 # Read pathset from a csv file
 def read_pathset(directory, top):
+    """Read pathset and lengths from a csv file.
+
+    Args:
+        directory (str): The directory containing the CSV file.
+        top (str): The name of the topology.
+
+    Returns:
+        tuple: A tuple containing two lists - the pathsets and their lengths.
+    """
     # Read the pathset from a csv file
     df = pd.read_csv(os.path.join(directory, "Pathset_" + top + ".csv"))
 
@@ -48,8 +69,11 @@ def read_pathset(directory, top):
 
     # Extract the 'pathsets' column as a list
     pathsets = df["pathsets"].values.tolist()
+    
+    # Extract the 'length' column as a list
+    lengths = df["length"].values.tolist()
 
-    return pathsets
+    return pathsets, lengths
 
 # Evaluate the mincutset and save it to a csv file
 def save_mincutset(directory, top):
@@ -113,7 +137,7 @@ def save_pathset(directory, top):
     # Evaluate the boolean expression from the mincutsets and save it to a csv file
 def save_boolean_expression_from_mincutset(directory, top):
     # Read the mincutset from the csv file
-    mincutsets = read_mincutset(directory, top)
+    mincutsets, _ = read_mincutset(directory, top)
 
     # Read the graph from the pickle file
     G, _, _ = read_graph(directory, top)
@@ -155,7 +179,7 @@ def save_boolean_expression_from_mincutset(directory, top):
 # Evaluate the boolean expression from the pathset and save it to a csv file
 def save_boolean_expression_from_pathset(directory, top):
     # Read the pathset from the csv file
-    pathsets = read_pathset(directory, top)
+    pathsets, _ = read_pathset(directory, top)
 
     # Read the graph from the pickle file
     G, _, _ = read_graph(directory, top)
@@ -195,7 +219,7 @@ def save_boolean_expression_from_pathset(directory, top):
     
 def save_boolean_expression_from_sdp(directory, top):
     # Read the mincutset from the csv file
-    pathsets = read_pathset(directory, top)
+    pathsets, _ = read_pathset(directory, top)
 
     # Read the graph from the pickle file
     G, _, _ = read_graph(directory, top)

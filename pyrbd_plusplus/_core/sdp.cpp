@@ -426,6 +426,7 @@ namespace pyrbdpp::sdp
             }
         }
 
+
         // Add the thread results to the finalSDP
         std::vector<SDPSets> finalSDP;
         for (const auto &result : threadResults)
@@ -500,8 +501,8 @@ namespace pyrbdpp::sdp
             // Measure the time taken for the current iteration
             auto end = std::chrono::high_resolution_clock::now();
 
-            // Calculate the duration in milliseconds
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+            // Calculate the duration
+            auto duration = end - start;
 
             debugInfo[i] = {finalSDP.size(), duration.count()};
         }

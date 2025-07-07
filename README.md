@@ -31,3 +31,10 @@ cd build
 cmake -DCMAKE_C_COMPILER=x86_64-conda-linux-gnu-gcc -DCMAKE_CXX_COMPILER=x86_64-conda-linux-gnu-g++ ..
 make distclean && make -j
 ```
+
+## Insall Python Package
+
+```bash
+cd ..
+pip install -e .
+```

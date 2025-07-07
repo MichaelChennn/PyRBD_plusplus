@@ -2,8 +2,7 @@
 
 build/*
 
-benchmarks/*
-!benchmarks/.gitkeep
+benchmark/results/*
 
 tests/*
 !tests/.gitkeep
@@ -18,3 +17,5 @@ topologies/Germany_50/Pathset_Germany_50.csv
 
 # Build so files
 *.so
+
+scalability/*
