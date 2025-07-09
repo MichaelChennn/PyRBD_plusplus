@@ -20,7 +20,7 @@ namespace pyrbdpp::sdp
      * @param sdpSets SPD sets with complementary and non-complementary sets
      * @return Eliminated SDP sets
      */
-    SDPSets eliminateSDPSet(const SDPSets &sdpSets);
+    SDPSets eliminateSDPSet(SDPSets &sdpSets);
 
     /**
      * @brief Absorbs the SDP set
@@ -31,7 +31,7 @@ namespace pyrbdpp::sdp
      * @return absorbed SDP sets
      * @note The function will only absorb the complementary sets.
      */
-    SDPSets absorbSDPSet(const SDPSets &sdpSets);
+    SDPSets absorbSDPSet(SDPSets sdpSets);
 
     /**
      * @brief Decomposes the SDP set according the algorithm from the paper "A simple algorithm for sum of disjoint products" by Ji Xing
@@ -55,7 +55,7 @@ namespace pyrbdpp::sdp
      *       The function will also eliminate and absorb the SDP sets before returning the result.
      *       This means that the result will not contain any redundant sets.
      */
-    bool decomposeSDPSet(const SDPSets &sdpSets, std::vector<SDPSets> &results);
+    std::vector<SDPSets> decomposeSDPSet(SDPSets sdpSets);
 
     /**
      * @brief Sort the path sets acording to the algorithm from the paper "A Procedure for Generating the Sums of Disjoint Products" by Brijendra Singh
@@ -82,7 +82,7 @@ namespace pyrbdpp::sdp
      * @return Sorted pathSets
      * @note The pathSets are sorted in place, so the original pathSets will be modified.
      */
-    PathSets sortPathSet(PathSets &pathSets);
+    PathSets sortPathSet(PathSets pathSets);
 
     /**
      * @brief Sums of Disjoint Products (SDP) algorithm from the papar "A Procedure for Gnerating the Sums of Disjoint Products" by Brijendra Singh
@@ -115,7 +115,7 @@ namespace pyrbdpp::sdp
      *       The src and dst are not used in this function, but they are included for compatibility with other functions.  
      * @return Vector of SDP sets
      */
-    std::vector<SDPSets> toSDPSet(NodeID src, NodeID dst, PathSets &pathSets);
+    std::vector<SDPSets> toSDPSet(NodeID src, NodeID dst, PathSets pathSets);
 
     /**
      * @brief The parallel version of the toSDPSet() function for large path sets.
@@ -137,22 +137,7 @@ namespace pyrbdpp::sdp
      *       If the path sets size smaller than 1000, the toSDPSet() function will be used.
      *       The function will be called automatically by the evalAvailParallel() function.
      */
-    std::vector<SDPSets> toSDPSetParallel(NodeID src, NodeID dst, PathSets &pathSets);
-
-    /**
-     * @brief Converts the path sets to SDP sets and returns debug information.
-     * This function is the debug version of the toSDPSet() function.
-     *
-     * @param src Source node ID
-     * @param dst Destination node ID
-     * @param pathSets Path sets for the source and destination pair
-     *  @note The debug information is saved in a map with the iteration as key and the current ProbaSet size and duration as value.
-     *        The duration is the time taken to execute one iteration of the algorithm.
-     *        The map is used to track the progress of the algorithm and to debug the performance
-     *        of the algorithm.
-     * @return Debug information: {iteration : (current ProbaSet size, duration)}
-     */
-    DebugInfo toSDPSetDebug(NodeID src, NodeID dst, PathSets &pathSets);
+    std::vector<SDPSets> toSDPSetParallel(NodeID src, NodeID dst, PathSets pathSets);
 
     /**
      * @brief Evaluate the availability of SDP set

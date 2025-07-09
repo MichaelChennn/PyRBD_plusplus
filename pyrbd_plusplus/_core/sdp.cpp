@@ -3,71 +3,78 @@
 #include <numeric>
 #include <chrono>
 #include <mutex>
+#include <malloc.h>
+#include <algorithm>
+#include <queue>
 
 namespace pyrbdpp::sdp
 {   
 
     using pyrbdpp::utils::isSubSet;
+    using pyrbdpp::utils::hasCommonElement;
 
-    SDPSets eliminateSDPSet(const SDPSets &sdpSets)
-    {
-        // Create a vector to store the elements that will be eliminated
-        // from the non-complementary sets based on the complementary sets
-        std::vector<int> eliminatedElements;
+    SDPSets eliminateSDPSet(SDPSets &sdpSets)
+    {   
+        // Sort the sdp sets, non-complementary sets first, then complementary sets
+        std::sort(sdpSets.begin(), sdpSets.end(), [](const SDP &a, const SDP &b) {
+            return a.isComplementary() < b.isComplementary();
+        });
 
-        for (const auto &SDP : sdpSets)
+        // Initialize a vector to store the eliminated elements
+        std::vector<NodeID> eliminatedElements;
+
+        // Create a new set for the eliminated SDP sets and reserve space for it
+        SDPSets eliminatedSet;
+        eliminatedSet.reserve(sdpSets.size());
+
+        // Temporary set to store the new set of elements
+        std::vector<int> newSet;
+
+        for (auto &SDP : sdpSets)
         {
             if (!SDP.isComplementary())
             {
                 // If the set is non complementary, we add its elements to the eliminatedElements
                 eliminatedElements.insert(eliminatedElements.end(), SDP.begin(), SDP.end());
-            }
-        }
-
-        // Create a new set for the eliminated SDP sets
-        SDPSets eliminatedSet;
-
-        for (const auto &SDP : sdpSets)
-        {
-            if (SDP.isComplementary())
-            {
-                // If the set is complementary, check if it has any elements in common with the eliminatedElements
-                std::vector<int> newSet;
-                std::set_difference(SDP.begin(), SDP.end(), eliminatedElements.begin(), eliminatedElements.end(),
-                                    std::back_inserter(newSet));
-                eliminatedSet.emplace_back(true, newSet);
+                eliminatedSet.push_back(std::move(SDP));
             }
             else
             {
-                // If the set is non complementary, we just add it to the eliminatedSet
-                eliminatedSet.push_back(SDP);
+                // If the set is complementary, check if it has any elements in common with the eliminatedElements
+                newSet.clear(); 
+                std::set_difference(SDP.begin(), SDP.end(), eliminatedElements.begin(), eliminatedElements.end(),
+                                    std::back_inserter(newSet));
+                eliminatedSet.emplace_back(true, std::move(newSet));
             }
         }
 
         return eliminatedSet;
     }
 
-    SDPSets absorbSDPSet(const SDPSets &sdpSets)
+    SDPSets absorbSDPSet(SDPSets sdpSets)
     {   
-        // Initialize a vector to store the absorbed SDPs
+        // Initialize a vector to store the absorbed SDPs and reserve space for it
         SDPSets absorbedSDPs;
+        absorbedSDPs.reserve(sdpSets.size());        
 
         // If the set is complementary, add it to the complementarySDPs else add it to absorbedSDPs
         SDPSets complementarySDPs;
-        SDPSets noncomplementarySDPs;
-
-        for (const auto &SDP : sdpSets)
+        complementarySDPs.reserve(sdpSets.size()); // Reserve space for the complementarySDPs to avoid reallocation
+        
+        // Iterate over the input SDP sets and separate them into complementary and non-complementary sets
+        for (auto &SDP : sdpSets)
         {
             if (SDP.isComplementary())
             {
-                complementarySDPs.push_back(SDP);
+                complementarySDPs.push_back(std::move(SDP));
             }
             else
             {
-                absorbedSDPs.push_back(SDP);
+                absorbedSDPs.push_back(std::move(SDP));
             }
         }
 
+        // Initialize a vector of boolean marks to track absorbed sets
         std::vector<bool> absorbed(complementarySDPs.size(), false);
 
         for (size_t i = 0; i < complementarySDPs.size(); ++i)
@@ -98,129 +105,155 @@ namespace pyrbdpp::sdp
 
             if (!absorbed[i])
             {
-                absorbedSDPs.push_back(currentSDP); // Keep the current set if not absorbed
+                absorbedSDPs.push_back(complementarySDPs[i]); // Dont move the SDP, will be still be used
             }
         }
+
+        
 
         return absorbedSDPs;
     }
 
-    bool decomposeSDPSet(const SDPSets &sdpSets, std::vector<SDPSets> &results)
-    {
-        // Find the normal sets and the complementary sets
-        SDPSets complementarySDPs;
+    std::vector<SDPSets> decomposeSDPSet(SDPSets sdpSets)
+    {   
+        // Vector to store the results of the decomposition
+        std::vector<SDPSets> results;
 
-        for (const auto &SDP : sdpSets)
-        {
-            if (SDP.isComplementary())
-            {
-                // If the set is complementary, add it to the complementarySDPs
-                complementarySDPs.push_back(SDP);
+        // Queue to store the SDP sets for processing
+        std::queue<SDPSets> queue;
+        queue.push(std::move(sdpSets));
+
+        while (!queue.empty())
+        {   
+            // Get the current SDP sets from the queue
+            SDPSets current = std::move(queue.front());
+            queue.pop();
+
+            // Check if the current SDP sets have any common elements
+            if (!hasCommonElement(current))
+            {   
+                results.push_back(std::move(current));
+                continue;
             }
-        }
 
-        // If there are no complementary sets, return the original SDPs
-        if (complementarySDPs.empty())
-        {
-            results.push_back(sdpSets);
-            return true;
-        }
-
-        std::pair<SDP, SDP> commonSDPpair;
-        std::vector<int> commonElements;
-
-        bool firstCommonPairFound = false;
-        // Find only the first common elements in the complementary sets and handle it
-        for (size_t i = 0; i < complementarySDPs.size(); ++i)
-        {
-            const auto &compSDP = complementarySDPs[i];
-
-            // Check if the set has any elements in common with other complementary sets
-            for (size_t j = i + 1; j < complementarySDPs.size(); ++j)
+            // Separate the complementary sets and non-complementary sets
+            SDPSets complementarySDPs, normalSDPs;
+            for (auto &SDP : current)
             {
-                const auto &otherCompSDP = complementarySDPs[j];
-
-                // Find the intersection of the two sets
-                std::set_intersection(compSDP.begin(), compSDP.end(),
-                                      otherCompSDP.begin(), otherCompSDP.end(),
-                                      std::back_inserter(commonElements));
-
-                // If there are common elements, add them to the commonElements
-                if (!commonElements.empty())
+                if (SDP.isComplementary())
                 {
-                    commonSDPpair = std::make_pair(compSDP, otherCompSDP);
-                    firstCommonPairFound = true;
-                    break;
+                    complementarySDPs.push_back(std::move(SDP));
+                }
+                else
+                {
+                    normalSDPs.push_back(std::move(SDP));
                 }
             }
 
-            // If we found the first common pair, break the loop
-            if (firstCommonPairFound)
+            // Save the common SDP sets pair and their common elements
+            std::pair<SDP, SDP> commonSDPpair;
+            std::vector<NodeID> commonElements;
+
+            // Find only the first common elements in the complementary sets
+            bool found = false;
+
+            // Save the index of the two common pairs
+            size_t foundI = 0;
+            size_t foundJ = 0;
+            
+            for (size_t i = 0; i < complementarySDPs.size() && !found; ++i)
             {
-                break;
+                for (size_t j = i + 1; j < complementarySDPs.size(); ++j)
+                {   
+                    commonElements.clear(); // Clear the common elements for each pair
+                    // Find the intersection of the two sets
+                    std::set_intersection(complementarySDPs[i].begin(), complementarySDPs[i].end(),
+                                          complementarySDPs[j].begin(), complementarySDPs[j].end(),
+                                          std::back_inserter(commonElements));
+                    if (!commonElements.empty())
+                    {
+                        commonSDPpair = std::make_pair(complementarySDPs[i], complementarySDPs[j]);
+                        found = true;
+                        foundI = i;
+                        foundJ = j;
+                        break;
+                    }
+                }
             }
-        }
 
-        // If there is no more common elements, add the original SDP set to the results and return true
-        if (commonElements.empty())
-        {
-            // Add the original SDPs to the results
-            results.push_back(sdpSets);
-            return true;
-        }
+            // If no common elements are found, add the current SDP sets to the results and continue
+            if (!found)
+            {   
+                results.push_back(std::move(current));
+                continue;
+            }
 
-        // Add all SDP except common pair to the normal SDP set
-        SDPSets normalSDPs;
-        for (const auto &SDP : sdpSets)
-        {
-            if (!SDP.equals(commonSDPpair.first) && !SDP.equals(commonSDPpair.second))
+            // Add the not common SDP sets to the normalSDPs
+            for (size_t i = 0; i < complementarySDPs.size(); ++i)
             {
-                normalSDPs.push_back(SDP);
+                if (i != foundI && i != foundJ)
+                {
+                    normalSDPs.push_back(std::move(complementarySDPs[i]));
+                }
             }
+
+            // Remove the common elements from the common pairs
+            for (const auto &elem : commonElements)
+            {
+                commonSDPpair.first.remove(elem);
+                commonSDPpair.second.remove(elem);
+            }
+        
+            // Reserve space for the decomposed SDPs
+            SDPSets decomposed1, decomposed2;
+            decomposed1.reserve(normalSDPs.size() + 1);
+            decomposed2.reserve(normalSDPs.size() + 3);
+
+            // For the first new SDP sets we add all normal SDPs and the complementary SDP with the common elements
+            decomposed1 = normalSDPs;
+            decomposed1.emplace_back(true, commonElements);
+
+            // For the second new SDP sets we add
+            // 1. all normal SDP
+            // 2. Non complementary SDP with the common elements
+            // 3. Complementary SDP with elements from the first common pair without common elements
+            // 4. Complementary SDP with elements from the second common pair without common elements
+            decomposed2 = std::move(normalSDPs);
+            decomposed2.emplace_back(false, std::move(commonElements));
+            decomposed2.push_back(std::move(commonSDPpair.first));
+            decomposed2.push_back(std::move(commonSDPpair.second));
+
+            // Eliminate and absorb the decomposed SDPs
+            decomposed1 = eliminateSDPSet(decomposed1);
+            decomposed2 = eliminateSDPSet(decomposed2);
+            
+            decomposed1 = absorbSDPSet(decomposed1);
+            decomposed2 = absorbSDPSet(decomposed2);
+
+            // Add it to the queue for further decomposition
+            std::cout << "Adding decomposed SDPs to the queue for further decomposition." << std::endl;
+            queue.push(std::move(decomposed1));
+            queue.push(std::move(decomposed2));
+        
         }
+        
+        return results;
 
-        // Remove the common elements from the common pairs
-        for (const auto &elem : commonElements)
-        {
-            commonSDPpair.first.remove(elem);
-            commonSDPpair.second.remove(elem);
-        }
-
-        // Create two new SDP sets for the decomposed sets
-        SDPSets decomposedSDPs1;
-        SDPSets decomposedSDPs2;
-
-        // For the first new SDP sets we add all normal SDPs and the complementary SDP with the common elements
-        SDP commonSDP1(true, commonElements);
-        decomposedSDPs1.insert(decomposedSDPs1.end(), normalSDPs.begin(), normalSDPs.end());
-        decomposedSDPs1.push_back(commonSDP1);
-
-        // For the second new SDP sets we add
-        // 1. all normal SDP
-        // 2. Non complementary SDP with the common elements
-        // 3. Complementary SDP with elements from the first common pair without common elements
-        // 4. Complementary SDP with elements from the second common pair without common elements
-        SDP commonSDP2(false, commonElements);
-        decomposedSDPs2.insert(decomposedSDPs2.end(), normalSDPs.begin(), normalSDPs.end());
-        decomposedSDPs2.push_back(commonSDP2);
-        decomposedSDPs2.push_back(commonSDPpair.first);
-        decomposedSDPs2.push_back(commonSDPpair.second);
-
-        // Eliminate the SDP sets to remove any redundant sets
-        decomposedSDPs1 = eliminateSDPSet(decomposedSDPs1);
-        decomposedSDPs2 = eliminateSDPSet(decomposedSDPs2);
-
-        // Absorb the SDP sets to remove any redundant sets
-        decomposedSDPs1 = absorbSDPSet(decomposedSDPs1);
-        decomposedSDPs2 = absorbSDPSet(decomposedSDPs2);
-
-        // recursively decompose new SDPs in results
-        return decomposeSDPSet(decomposedSDPs1, results) && decomposeSDPSet(decomposedSDPs2, results);
     }
 
-    PathSets sortPathSet(PathSets &pathSets)
-    {
-        // Sort the number in each set of pathSets in ascending order
+    PathSets sortPathSet(PathSets pathSets)
+    {   
+        // If the pathSets is empty, return an empty vector
+        if (pathSets.empty())
+        {
+            return {};
+        }
+
+        // Initial the result sorted pathSet
+        PathSets sortedPathSet;
+        sortedPathSet.reserve(pathSets.size());
+
+        // Sort the integers in each set of pathSets in ascending order
         for (auto &set : pathSets)
         {
             std::sort(set.begin(), set.end());
@@ -235,65 +268,65 @@ namespace pyrbdpp::sdp
             }
             return a < b; });
 
-        // Separate the pathSets into a map according to the size of the set
+        // Initialize a map to store the pathSets with the size of the pathSet as the key
         std::map<int, PathSets> pathSetMap;
-        for (const auto &set : pathSets)
+        
+        // Save the pathSets in the map
+        for (auto &set : pathSets)
         {
-            pathSetMap[set.size()].push_back(set);
+            pathSetMap[set.size()].push_back(std::move(set)); // Here we move the set to avoid copying
         }
 
-        // Save the sorted pathSet
-        std::vector<std::vector<int>> sortedPathSet;
-
-        // Reserve space for the sortedPathSet to avoid reallocation
-        sortedPathSet.reserve(pathSets.size());
+        // Save the first size of the pathSet to the sortedPathSet as initial value
+        auto it = pathSetMap.begin();
+        if (it != pathSetMap.end())
+        {
+            // Move the first set to the sortedPathSet
+            std::move(it->second.begin(), it->second.end(), std::back_inserter(sortedPathSet));
+            // Add the iterator to the next element
+            ++it;
+        }
 
         // Sort the sets with the same size according to the increasing maximal number of literals in common with the preceding sets
-        for (auto &pair : pathSetMap)
+        for (; it != pathSetMap.end(); ++it)
         {
             // pair.first is the size of the set, pair.second is the vector of sets with this size
-            auto &unsortedSets = pair.second;
-
-            // If the sortedPathSet is empty, just add all sets with this size
-            if (sortedPathSet.empty())
-            {
-                sortedPathSet.insert(sortedPathSet.end(), unsortedSets.begin(), unsortedSets.end());
-                continue;
-            }
+            auto &unsortedSets = it->second;
 
             // Create a vector to store the maximal number of literals in common with the preceding sets
-            Set maxCommonLiteralsLst;
+            Set maxCommonCounts;
 
-            // For each set stores the maximal number of literals in common with the preceding sets
-            maxCommonLiteralsLst.reserve(unsortedSets.size());
-            std::transform(unsortedSets.begin(), unsortedSets.end(), std::back_inserter(maxCommonLiteralsLst), [&sortedPathSet](const std::vector<int> &set)
+            // For each pathset stores the maximal number of literals in common with the preceding sets
+            maxCommonCounts.reserve(unsortedSets.size());
+            std::transform(unsortedSets.begin(), unsortedSets.end(), std::back_inserter(maxCommonCounts), 
+                            [&sortedPathSet](const std::vector<int> &set)
                            {
-                int maxCommonLiterals = 0;
+                int maxCommonNum = 0;
                 for (const auto &precedSet : sortedPathSet)
                 {
                     // Count the number of literals in common
-                    int commonLiterals = std::count_if(set.begin(), set.end(), [&precedSet](int elem) {
+                    int commonNum = std::count_if(set.begin(), set.end(), [&precedSet](int elem) {
                         return std::find(precedSet.begin(), precedSet.end(), elem) != precedSet.end();
                     });
 
                     // If the current set has more literals in common, update the best set
-                    if (commonLiterals > maxCommonLiterals)
+                    if (commonNum > maxCommonNum)
                     {
-                        maxCommonLiterals = commonLiterals;
+                        maxCommonNum = commonNum;
                     }
                 }
-                return maxCommonLiterals; });
+                return maxCommonNum; });
 
             // Create new indices for the unsortedSets based on the maximal number of literals in common in ascending order
             std::vector<size_t> indices(unsortedSets.size());
             std::iota(indices.begin(), indices.end(), 0);
-            std::sort(indices.begin(), indices.end(), [&maxCommonLiteralsLst](size_t a, size_t b)
-                      { return maxCommonLiteralsLst[a] < maxCommonLiteralsLst[b]; });
+            std::sort(indices.begin(), indices.end(), [&maxCommonCounts](size_t a, size_t b)
+                      { return maxCommonCounts[a] < maxCommonCounts[b]; });
 
             // Add the sorted sets to the sortedPathSet based on the indices
             for (size_t idx : indices)
             {
-                sortedPathSet.push_back(unsortedSets[idx]);
+                sortedPathSet.push_back(std::move(unsortedSets[idx])); // Here we move the set to avoid copying
             }
         }
 
@@ -301,66 +334,64 @@ namespace pyrbdpp::sdp
         return sortedPathSet;
     }
 
-    std::vector<SDPSets> toSDPSet(NodeID src, NodeID dst, PathSets &pathSets)
+    std::vector<SDPSets> toSDPSet(NodeID src, NodeID dst, PathSets pathSets)
     {
         // Sort the pathSets
-        std::vector<std::vector<int>> sortedPathSet = sortPathSet(pathSets);
+        PathSets sortedPathSet = sortPathSet(std::move(pathSets));
 
-        // Now we have the sorted pathSet, we can apply the second part of the SDP algorithm
-
-        // Use the SDP set to store the final result, initialized with the first set in the sorted pathSet
-        SDPSets firstSDP;
-        firstSDP.emplace_back(false, sortedPathSet.front());
-        std::vector<SDPSets> finalSDP = {{firstSDP}};
-
-        // Iterate over the sorted pathSet starting from the second set and find only the first pair of sets that have common elements
-        for (size_t i = 1; i < sortedPathSet.size(); ++i)
+        if (sortedPathSet.empty())
         {
-            // Get the current set
-            const auto &currentSet = sortedPathSet[i];
+            return {};
+        }
 
-            // Initialize the final SDP set for the current set
-            SDPSets currentSDPs;
-            currentSDPs.emplace_back(false, currentSet);
+        // Initialize a the final SDP sets with the non-complementary first set in the sorted pathSet
+        std::vector<SDPSets> finalSDPs = {{{false, sortedPathSet.front()}}};
+
+        // Iterate over the sorted pathSet starting from the second set
+        for (size_t i = 1; i < sortedPathSet.size(); ++i)
+        {   
+            // Initialize result SDPs for the current set
+            SDPSets resultSDPs;
+
+            // Add the current set as a non-complementary SDP in the result
+            const auto &currentSet = sortedPathSet[i];
+            resultSDPs.emplace_back(false, currentSet);
 
             // Iterate over the previous sets in sortedPathSet
             for (size_t j = 0; j < i; ++j)
-            {
-                const auto &precedingSet = sortedPathSet[j];
-
+            {   
                 // Create the RC set: elements in precedingSet but not in currentSet
                 std::vector<int> RC;
+                const auto &precedingSet = sortedPathSet[j]; 
                 std::set_difference(precedingSet.begin(), precedingSet.end(),
                                     currentSet.begin(), currentSet.end(),
                                     std::back_inserter(RC));
-
-                // Add not empty RC sets to the currentSDPs
                 if (!RC.empty())
                 {
-                    currentSDPs.emplace_back(true, RC);
+                    resultSDPs.emplace_back(true, std::move(RC));
                 }
             }
 
-            // Absorb the currentSDPs to remove any redundant sets
-            currentSDPs = absorbSDPSet(currentSDPs);
+            // Absorb the resultSDPs to remove any redundant sets
+            resultSDPs = absorbSDPSet(std::move(resultSDPs));
 
-            // Decompose the currentSDPs and add all results to the finalSDP
-            std::vector<SDPSets> decomposedResults;
-            if (decomposeSDPSet(currentSDPs, decomposedResults))
+            // Decompose the resultSDPs if it has common elements
+            if (hasCommonElement(resultSDPs))
             {
-                finalSDP.insert(finalSDP.end(), decomposedResults.begin(), decomposedResults.end());
+                std::vector<SDPSets> decomposedResults = decomposeSDPSet(std::move(resultSDPs));
+                std::move(decomposedResults.begin(), decomposedResults.end(), std::back_inserter(finalSDPs));
             }
             else
             {
-                // If decomposition fails, Error
-                std::cerr << "Error: Decomposition failed for currentSDPs." << std::endl;
+                // If there are no common elements, just add the resultSDPs to the finalSDPs
+                finalSDPs.push_back(std::move(resultSDPs));
             }
         }
 
-        return finalSDP;
+        return finalSDPs;
     }
 
-    std::vector<SDPSets> toSDPSetParallel(NodeID src, NodeID dst, PathSets &pathSets)
+    std::vector<SDPSets> toSDPSetParallel(NodeID src, NodeID dst, PathSets pathSets)
     {   
         // Check if the pathSets size is less than 1000
         if (pathSets.size() < 1000)
@@ -373,141 +404,63 @@ namespace pyrbdpp::sdp
         }
         
         // Sort the pathSets
-        std::vector<std::vector<int>> sortedPathSet = sortPathSet(pathSets);
-
-        // Now we have the sorted pathSet, we can apply the second part of the SDP algorithm
+        PathSets sortedPathSet = sortPathSet(std::move(pathSets));
 
         // Initialize a the final thread results
         std::vector<std::vector<SDPSets>> threadResults(sortedPathSet.size());
 
-        // Use the SDP set to store the final result, initialized with the first set in the sorted pathSet
-        SDPSets firstSDP;
-        firstSDP.emplace_back(false, sortedPathSet.front());
-        threadResults[0] = {firstSDP};
+        // Initialize the first thread result with the non-complementary first set in the sorted pathSet
+        threadResults[0] = {{{false, sortedPathSet.front()}}};
 
-        // Iterate over the sorted pathSet starting from the second set and find only the first pair of sets that have common elements
+        // Iterate over the sorted pathSet starting from the second set
         #pragma omp parallel for schedule(dynamic)
         for (size_t i = 1; i < sortedPathSet.size(); ++i)
-        {
-            // Get the current set
-            const auto &currentSet = sortedPathSet[i];
-
-            // Initialize the final SDP set for the current set
-            SDPSets currentSDPs;
-            currentSDPs.emplace_back(false, currentSet);
-
-            // Iterate over the previous sets in sortedPathSet
-            for (size_t j = 0; j < i; ++j)
-            {
-                const auto &precedingSet = sortedPathSet[j];
-
-                // Create the RC set: elements in precedingSet but not in currentSet
-                std::vector<int> RC;
-                std::set_difference(precedingSet.begin(), precedingSet.end(),
-                                    currentSet.begin(), currentSet.end(),
-                                    std::back_inserter(RC));
-
-                // Add not empty RC sets to the currentSDPs
-                if (!RC.empty())
-                {
-                    currentSDPs.emplace_back(true, RC);
-                }
-            }
-
-            // Absorb the currentSDPs to remove any redundant sets
-            currentSDPs = absorbSDPSet(currentSDPs);
-
-            // Decompose the currentSDPs and add all results to the threadResults
-            if (decomposeSDPSet(currentSDPs, threadResults[i])){ }
-            else
-            {
-                // If decomposition fails, Error
-                std::cerr << "Error: Decomposition failed for currentSDPs." << std::endl;
-            }
-        }
-
-
-        // Add the thread results to the finalSDP
-        std::vector<SDPSets> finalSDP;
-        for (const auto &result : threadResults)
-        {
-            finalSDP.insert(finalSDP.end(), result.begin(), result.end());
-        }
-
-        return finalSDP;
-    }
-
-    DebugInfo toSDPSetDebug(NodeID src, NodeID dst, PathSets &pathSets)
-    {   
-        // Initialize DebugInfo to store the debug information
-        DebugInfo debugInfo;
-
-        // Sort the pathSets
-        std::vector<std::vector<int>> sortedPathSet = sortPathSet(pathSets);
-
-        // Now we have the sorted pathSet, we can apply the second part of the SDP algorithm
-
-        // Use the SDP set to store the final result, initialized with the first set in the sorted pathSet
-        SDPSets firstSDP;
-        firstSDP.emplace_back(false, sortedPathSet.front());
-        std::vector<SDPSets> finalSDP = {{firstSDP}};
-
-        // Iterate over the sorted pathSet starting from the second set and find only the first pair of sets that have common elements
-        for (size_t i = 1; i < sortedPathSet.size(); ++i)
         {   
-            // Measure the time taken for each iteration
-            auto start = std::chrono::high_resolution_clock::now();
+            // Save the result for the current SDP
+            SDPSets resultSDPs;
 
-            // Get the current set
+            // Initialize the result SDPs with the current set as a non-complementary SDP
             const auto &currentSet = sortedPathSet[i];
-
-            // Initialize the final SDP set for the current set
-            SDPSets currentSDPs;
-            currentSDPs.emplace_back(false, currentSet);
+            resultSDPs.emplace_back(false, currentSet);
 
             // Iterate over the previous sets in sortedPathSet
             for (size_t j = 0; j < i; ++j)
-            {
-                const auto &precedingSet = sortedPathSet[j];
-
+            {   
                 // Create the RC set: elements in precedingSet but not in currentSet
                 std::vector<int> RC;
+                const auto &precedingSet = sortedPathSet[j];
                 std::set_difference(precedingSet.begin(), precedingSet.end(),
                                     currentSet.begin(), currentSet.end(),
                                     std::back_inserter(RC));
-
-                // Add not empty RC sets to the currentSDPs
                 if (!RC.empty())
                 {
-                    currentSDPs.emplace_back(true, RC);
+                    resultSDPs.emplace_back(true, std::move(RC));
                 }
             }
 
-            // Absorb the currentSDPs to remove any redundant sets
-            currentSDPs = absorbSDPSet(currentSDPs);
+            // Absorb the resultSDPs to remove any redundant sets
+            resultSDPs = absorbSDPSet(std::move(resultSDPs));
 
-            // Decompose the currentSDPs and add all results to the finalSDP
-            std::vector<SDPSets> decomposedResults;
-            if (decomposeSDPSet(currentSDPs, decomposedResults))
+            // Decompose the resultSDPs if it has common elements
+            if (hasCommonElement(resultSDPs))
             {
-                finalSDP.insert(finalSDP.end(), decomposedResults.begin(), decomposedResults.end());
+                threadResults[i] = decomposeSDPSet(std::move(resultSDPs));
             }
             else
             {
-                // If decomposition fails, Error
-                std::cerr << "Error: Decomposition failed for currentSDPs." << std::endl;
+                // If there are no common elements, just add the resultSDPs to the threadResults
+                threadResults[i] = {std::move(resultSDPs)};
             }
-
-            // Measure the time taken for the current iteration
-            auto end = std::chrono::high_resolution_clock::now();
-
-            // Calculate the duration
-            auto duration = end - start;
-
-            debugInfo[i] = {finalSDP.size(), duration.count()};
         }
 
-        return debugInfo;
+        std::vector<SDPSets> finalSDPs;
+        // Combine the results from all threads into the finalSDP
+        for (const auto &threadResult : threadResults)
+        {
+            std::move(threadResult.begin(), threadResult.end(), std::back_inserter(finalSDPs));
+        }
+
+        return finalSDPs;
     }
 
     double SDPSetToAvail(const ProbabilityMap &probaMap, const std::vector<SDPSets> &sdpSets)
@@ -608,3 +561,65 @@ namespace pyrbdpp::sdp
     }
 
 } // namespace pyrbdpp::sdp
+
+
+int main() {
+    using namespace pyrbdpp;
+    using namespace pyrbdpp::sdp;
+
+    // Test SortPathSet function
+    SDP sdp1(true, {15});
+    SDP sdp2(true, {10, 13, 17});
+    SDP sdp3(true, {4, 13});
+    SDP sdp4(true, {16, 18});
+    SDP sdp5(true, {18, 19});
+    SDPSets sdpSets = {sdp1, sdp2, sdp3, sdp4, sdp5};
+
+    // Test the avaiability evaluation functions
+    PathSets pathSets = {
+        {1, 14, 2},
+        {1, 15, 2},
+        {1, 3, 13, 17, 10, 6, 2},
+    };
+
+    //  all 0.99
+    std::map<NodeID, double> map = {
+        {1, 0.99},
+        {2, 0.99},
+        {3, 0.99},
+        {4, 0.99},
+        {5, 0.99},
+        {6, 0.99},
+        {7, 0.99},
+        {8, 0.99},
+        {9, 0.99},
+        {10, 0.99},
+        {11, 0.99},
+        {12, 0.99},
+        {13, 0.99},
+        {14, 0.99},
+        {15, 0.99},
+        {16, 0.99},
+        {17, 0.99},
+        {18, 0.99},
+        {19, 0.99}
+    };
+
+    ProbabilityMap probaMap = ProbabilityMap(map);
+
+    // std::vector<SDPSets> resultSDPs = toSDPSet(1, 2, pathSets);
+    // for (const auto &sdpSet : resultSDPs) {
+    //     std::cout << "SDP Set: ";
+    //     for (const auto &sdp : sdpSet) {
+    //         std::cout << sdp << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
+
+    double availability = evalAvail(1, 2, probaMap, pathSets);
+    std::cout << "Availability: " << availability << std::endl;
+
+    double parallelAvailability = evalAvailParallel(1, 2, probaMap, pathSets);
+    std::cout << "Parallel Availability: " << parallelAvailability << std::endl;
+    return 0;
+}

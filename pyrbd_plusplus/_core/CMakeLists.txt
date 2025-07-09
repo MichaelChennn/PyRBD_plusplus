@@ -17,6 +17,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(pybind11)
 
+# include json
+# find_package(nlohmann_json 3.2.0 REQUIRED)
+# FetchContent_Declare(
+#   nlohmann_json
+#   GIT_REPOSITORY https://github.com/nlohmann/json.git
+#   GIT_TAG        v3.10.5
+# )
+# FetchContent_MakeAvailable(nlohmann_json)
+
 # find OpenMP
 find_package(OpenMP REQUIRED)
 
@@ -25,14 +34,6 @@ pybind11_add_module(pyrbd_plusplus_cpp ${SRC})
 set_target_properties(pyrbd_plusplus_cpp PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 )
-
-# # create the library
-# add_library(pyrbd_plusplus_cpp MODULE ${SRC})
-
-
-# # link the pybind11 library
-# target_link_libraries(pyrbd_plusplus_cpp PRIVATE pybind11::module)
-
 
 # Link OpenMP if found
 if(OpenMP_CXX_FOUND)
@@ -59,4 +60,10 @@ add_custom_target(distclean
     COMMAND ${CMAKE_COMMAND} -E remove -f ${CMAKE_CURRENT_SOURCE_DIR}/*.so
     COMMAND ${CMAKE_COMMAND} -E remove_directory _deps
     COMMENT "Removing all build files"
+)
+
+# sdp
+add_executable(sdp sdp.cpp common.cpp utils.cpp)
+target_include_directories(sdp PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )

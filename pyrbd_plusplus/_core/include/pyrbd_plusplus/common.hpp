@@ -118,6 +118,22 @@ namespace pyrbdpp
             return std::equal(set.begin(), set.end(), other.set.begin());
         }
 
+        friend std::ostream &operator<<(std::ostream &os, const SDP &sdp)
+        {
+            if (sdp.is_complementary)
+            {
+                os << "-";
+            }
+            os << "{ ";
+            for (const auto &elem : sdp.set)
+            {
+                os << elem << " ";
+            }
+            os << "}";
+            return os;
+        }
+
+        // Print the SDP set
         void print() const
         {
             if (is_complementary)

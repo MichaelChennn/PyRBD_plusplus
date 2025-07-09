@@ -8,7 +8,6 @@
 
 ```bash
 sudo apt update
-# sudo apt install -y gcc-11 g++-11 build-essential cmake
 ```
 
 ## Python Environment
@@ -22,19 +21,9 @@ conda install -c conda-forge gcc_linux-64=11 gxx_linux-64=11
 
 ```
 
-## Install Cpp Dependencies
+## Install CPP Dependencies
 
 ```bash
-rm -rf build
-mkdir build
-cd build
-cmake -DCMAKE_C_COMPILER=x86_64-conda-linux-gnu-gcc -DCMAKE_CXX_COMPILER=x86_64-conda-linux-gnu-g++ ..
-make distclean && make -j
-```
-
-## Insall Python Package
-
-```bash
-cd ..
-pip install -e .
+chmod +x rebuild.sh
+./rebuild.sh
 ```

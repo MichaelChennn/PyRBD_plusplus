@@ -115,9 +115,9 @@ PYBIND11_MODULE(pyrbd_plusplus_cpp, m)
                 "Convert path sets to SDP sets (serial)",
                 py::arg("src"), py::arg("dst"), py::arg("path_sets"));
     
-    sdp_mod.def("to_sdp_set_debug", &sdp::toSDPSetDebug,
-                "Debug Version: Convert path sets to SDP sets",
-                py::arg("src"), py::arg("dst"), py::arg("path_sets"));
+    // sdp_mod.def("to_sdp_set_debug", &sdp::toSDPSetDebug,
+    //             "Debug Version: Convert path sets to SDP sets",
+    //             py::arg("src"), py::arg("dst"), py::arg("path_sets"));
 
     // sdp_mod.def("to_sdp_set_parallel", &sdp::toSDPSetParallel,
     //             "Convert path sets to SDP sets (parallel)",
