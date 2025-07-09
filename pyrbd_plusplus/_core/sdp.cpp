@@ -6,12 +6,24 @@
 #include <malloc.h>
 #include <algorithm>
 #include <queue>
+#include <iostream>
+#include <fstream>
+
+#define DEBUG_OUTPUT 0 
+
+#if DEBUG_OUTPUT
+    #define DEBUG_COUT std::cout
+#else
+    #define DEBUG_COUT if(false) std::cout
+#endif
 
 namespace pyrbdpp::sdp
 {   
 
     using pyrbdpp::utils::isSubSet;
     using pyrbdpp::utils::hasCommonElement;
+    using pyrbdpp::utils::toString;
+
 
     SDPSets eliminateSDPSet(SDPSets &sdpSets)
     {   
@@ -42,14 +54,20 @@ namespace pyrbdpp::sdp
             {
                 // If the set is complementary, check if it has any elements in common with the eliminatedElements
                 newSet.clear(); 
-                std::set_difference(SDP.begin(), SDP.end(), eliminatedElements.begin(), eliminatedElements.end(),
+                std::set_difference(SDP.begin(), SDP.end(), 
+                eliminatedElements.begin(), eliminatedElements.end(),
                                     std::back_inserter(newSet));
-                eliminatedSet.emplace_back(true, std::move(newSet));
+                // If the new set is not empty, we add it to the eliminatedSet
+                if (!newSet.empty())
+                {
+                    eliminatedSet.emplace_back(true, std::move(newSet));
+                }
             }
         }
 
         return eliminatedSet;
     }
+
 
     SDPSets absorbSDPSet(SDPSets sdpSets)
     {   
@@ -57,59 +75,44 @@ namespace pyrbdpp::sdp
         SDPSets absorbedSDPs;
         absorbedSDPs.reserve(sdpSets.size());        
 
-        // If the set is complementary, add it to the complementarySDPs else add it to absorbedSDPs
-        SDPSets complementarySDPs;
-        complementarySDPs.reserve(sdpSets.size()); // Reserve space for the complementarySDPs to avoid reallocation
-        
-        // Iterate over the input SDP sets and separate them into complementary and non-complementary sets
-        for (auto &SDP : sdpSets)
-        {
-            if (SDP.isComplementary())
-            {
-                complementarySDPs.push_back(std::move(SDP));
-            }
-            else
-            {
-                absorbedSDPs.push_back(std::move(SDP));
-            }
-        }
-
         // Initialize a vector of boolean marks to track absorbed sets
-        std::vector<bool> absorbed(complementarySDPs.size(), false);
+        std::vector<bool> absorbed(sdpSets.size(), false);
 
-        for (size_t i = 0; i < complementarySDPs.size(); ++i)
+        for (size_t i = 0; i < sdpSets.size(); ++i)
         {
             if (absorbed[i])
-                continue; // Skip if already absorbed
+                continue;
 
-            const auto &currentSDP = complementarySDPs[i];
+            const auto &currentSDP = sdpSets[i];
 
-            for (size_t j = 0; j < complementarySDPs.size(); ++j)
+            for (size_t j = i + 1; j < sdpSets.size(); ++j)
             {
-                if (i == j || absorbed[j])
-                    continue; // Skip self and already absorbed sets
+                if (absorbed[j])
+                    continue;
 
-                const auto &otherSDP = complementarySDPs[j];
+                const auto &otherSDP = sdpSets[j];
 
-                // Check if currentSDP is a subset of otherSDP
-                if (isSubSet(currentSDP.getSet(), otherSDP.getSet()))
+                if (currentSDP.equals(otherSDP))
+                {
+                    absorbed[j] = true; // Mark the duplicate as absorbed
+                    continue; // Skip further checks for this pair
+                } 
+                else if (isSubSet(currentSDP, otherSDP))
                 {
                     absorbed[j] = true; // Mark the superset as absorbed
-                }
 
-                if (isSubSet(otherSDP.getSet(), currentSDP.getSet()))
+                } else if (isSubSet(otherSDP, currentSDP))
                 {
                     absorbed[i] = true; // Mark the subset as absorbed
+                    break; // No need to check further for this currentSDP
                 }
             }
 
             if (!absorbed[i])
             {
-                absorbedSDPs.push_back(complementarySDPs[i]); // Dont move the SDP, will be still be used
+                absorbedSDPs.push_back(sdpSets[i]); // Dont move the SDP, will be still be used
             }
         }
-
-        
 
         return absorbedSDPs;
     }
@@ -203,7 +206,10 @@ namespace pyrbdpp::sdp
                 commonSDPpair.first.remove(elem);
                 commonSDPpair.second.remove(elem);
             }
-        
+            // DEBUG
+            DEBUG_COUT << "Decomposing Part: " << std::endl;
+            DEBUG_COUT << "Normal SDPs: " << toString(normalSDPs) << std::endl;
+
             // Reserve space for the decomposed SDPs
             SDPSets decomposed1, decomposed2;
             decomposed1.reserve(normalSDPs.size() + 1);
@@ -212,6 +218,9 @@ namespace pyrbdpp::sdp
             // For the first new SDP sets we add all normal SDPs and the complementary SDP with the common elements
             decomposed1 = normalSDPs;
             decomposed1.emplace_back(true, commonElements);
+
+            //DEBUG
+            DEBUG_COUT << "Decomposed1: " << toString(decomposed1) << std::endl;
 
             // For the second new SDP sets we add
             // 1. all normal SDP
@@ -223,15 +232,25 @@ namespace pyrbdpp::sdp
             decomposed2.push_back(std::move(commonSDPpair.first));
             decomposed2.push_back(std::move(commonSDPpair.second));
 
+            // DEBUG
+            DEBUG_COUT << "Decomposed2: " << toString(decomposed2) << std::endl;
+
             // Eliminate and absorb the decomposed SDPs
             decomposed1 = eliminateSDPSet(decomposed1);
             decomposed2 = eliminateSDPSet(decomposed2);
+
+            // DEBUG
+            DEBUG_COUT << "Eliminated Decomposed1: " << toString(decomposed1) << std::endl;
+            DEBUG_COUT << "Eliminated Decomposed2: " << toString(decomposed2) << std::endl;
             
             decomposed1 = absorbSDPSet(decomposed1);
             decomposed2 = absorbSDPSet(decomposed2);
 
+            // DEBUG
+            DEBUG_COUT << "Absorbed Decomposed1: " << toString(decomposed1) << std::endl;
+            DEBUG_COUT << "Absorbed Decomposed2: " << toString(decomposed2) << std::endl;
+
             // Add it to the queue for further decomposition
-            std::cout << "Adding decomposed SDPs to the queue for further decomposition." << std::endl;
             queue.push(std::move(decomposed1));
             queue.push(std::move(decomposed2));
         
@@ -339,6 +358,11 @@ namespace pyrbdpp::sdp
         // Sort the pathSets
         PathSets sortedPathSet = sortPathSet(std::move(pathSets));
 
+        // DEBUG
+        DEBUG_COUT << "Sorted PathSets: " << std::endl;
+        DEBUG_COUT << toString(sortedPathSet) << std::endl;
+        
+
         if (sortedPathSet.empty())
         {
             return {};
@@ -346,6 +370,12 @@ namespace pyrbdpp::sdp
 
         // Initialize a the final SDP sets with the non-complementary first set in the sorted pathSet
         std::vector<SDPSets> finalSDPs = {{{false, sortedPathSet.front()}}};
+
+        // DEBUG
+        DEBUG_COUT << "Initial finalSDPs: " << std::endl;
+        DEBUG_COUT << toString(finalSDPs) << std::endl;
+        DEBUG_COUT << "Sorted PathSets: " << std::endl;
+        DEBUG_COUT << toString(sortedPathSet) << std::endl;
 
         // Iterate over the sorted pathSet starting from the second set
         for (size_t i = 1; i < sortedPathSet.size(); ++i)
@@ -357,34 +387,56 @@ namespace pyrbdpp::sdp
             const auto &currentSet = sortedPathSet[i];
             resultSDPs.emplace_back(false, currentSet);
 
+            // DEBUG
+            DEBUG_COUT << "======================================================================================== " << std::endl;
+            DEBUG_COUT << "Processing set: " << toString(currentSet) << std::endl;
+            DEBUG_COUT << "Current resultSDPs: " << toString(resultSDPs) << std::endl;
+
             // Iterate over the previous sets in sortedPathSet
             for (size_t j = 0; j < i; ++j)
             {   
                 // Create the RC set: elements in precedingSet but not in currentSet
                 std::vector<int> RC;
                 const auto &precedingSet = sortedPathSet[j]; 
+                // DEBUG
+                DEBUG_COUT << "Comparing with preceding set: " << toString(precedingSet) << std::endl;
                 std::set_difference(precedingSet.begin(), precedingSet.end(),
                                     currentSet.begin(), currentSet.end(),
                                     std::back_inserter(RC));
                 if (!RC.empty())
-                {
+                {   
+                    // DEBUG
+                    DEBUG_COUT << "Adding RC set: " << toString(RC) << std::endl;
                     resultSDPs.emplace_back(true, std::move(RC));
                 }
             }
 
             // Absorb the resultSDPs to remove any redundant sets
             resultSDPs = absorbSDPSet(std::move(resultSDPs));
+            // DEBUG
+            DEBUG_COUT << "Absorbed resultSDPs: " << toString(resultSDPs) << std::endl;
 
             // Decompose the resultSDPs if it has common elements
             if (hasCommonElement(resultSDPs))
             {
+                // DEBUG
+                DEBUG_COUT << "Decomposing resultSDPs: " << toString(resultSDPs) << std::endl;
                 std::vector<SDPSets> decomposedResults = decomposeSDPSet(std::move(resultSDPs));
+                // DEBUG
+                DEBUG_COUT << "Decomposed results: " << std::endl;
+                DEBUG_COUT << toString(decomposedResults) << std::endl;
                 std::move(decomposedResults.begin(), decomposedResults.end(), std::back_inserter(finalSDPs));
+                // DEBUG
+                DEBUG_COUT << "Updated finalSDPs after decomposition: " << std::endl;
+                DEBUG_COUT << toString(finalSDPs) << std::endl;
             }
             else
             {
                 // If there are no common elements, just add the resultSDPs to the finalSDPs
                 finalSDPs.push_back(std::move(resultSDPs));
+                // DEBUG
+                DEBUG_COUT << "Added resultSDPs to finalSDPs: " << std::endl;
+                DEBUG_COUT << toString(finalSDPs) << std::endl;
             }
         }
 
@@ -467,6 +519,11 @@ namespace pyrbdpp::sdp
     {
         double availability = 0.0;
 
+        // Debug output file
+        // DEBUG Set double display precision to 9, Write it to a file availability.txt
+        std::cout.precision(9);
+        std::ofstream outFile("availability.txt", std::ios::app);
+
         // Iterate over each set in the SDP set
         for (const auto &set : sdpSets)
         {
@@ -499,8 +556,14 @@ namespace pyrbdpp::sdp
             }
 
             // Add the set availability to the total availability
+            // DEBUG
+            outFile << "Set: " << toString(set) << ", Set Availability: " << setAvailability << std::endl;            
             availability += setAvailability;
+            outFile << "Current Total Availability: " << availability << std::endl;
         }
+
+        // DEBUG Close the debug output file
+        outFile.close();
 
         return availability;
     }
@@ -566,60 +629,38 @@ namespace pyrbdpp::sdp
 int main() {
     using namespace pyrbdpp;
     using namespace pyrbdpp::sdp;
+    using namespace pyrbdpp::utils;
 
-    // Test SortPathSet function
-    SDP sdp1(true, {15});
-    SDP sdp2(true, {10, 13, 17});
-    SDP sdp3(true, {4, 13});
-    SDP sdp4(true, {16, 18});
-    SDP sdp5(true, {18, 19});
-    SDPSets sdpSets = {sdp1, sdp2, sdp3, sdp4, sdp5};
+    // Test evalAvail function
+    std::cout << "Testing evalAvail function..." << std::endl;
+    PathSets pathsets = readPathsetsFromFile("pathsets_1_2.txt");
+    std::cout << "Read " << pathsets.size() << " pathsets from file." << std::endl;
 
-    // Test the avaiability evaluation functions
-    PathSets pathSets = {
-        {1, 14, 2},
-        {1, 15, 2},
-        {1, 3, 13, 17, 10, 6, 2},
+    // PathSets pathsets = {
+    //     {1, 2, 17, 19, 29, 30, 50},
+    //     {1, 2, 17, 19, 29, 47, 50},
+    //     {1, 2, 25, 43, 46, 47, 48},
+    //     {1, 2, 25, 43, 46, 47, 50},
+    //     {1, 2, 11, 14, 15, 26, 49, 50},
+    //     {1, 2, 11, 15, 19, 26, 49, 50}
+    // };
+
+    std::vector<std::vector<SDP>> sdpSets = toSDPSet(1, 2, pathsets);
+
+    // All 0.99 1 to 50
+    ProbabilityMap probaMap = {
+        {1, 0.99}, {2, 0.99}, {3, 0.99}, {4, 0.99}, {5, 0.99},
+        {6, 0.99}, {7, 0.99}, {8, 0.99}, {9, 0.99}, {10, 0.99},
+        {11, 0.99}, {12, 0.99}, {13, 0.99}, {14, 0.99}, {15, 0.99},
+        {16, 0.99}, {17, 0.99}, {18, 0.99}, {19, 0.99}, {20, 0.99},
+        {21, 0.99}, {22, 0.99}, {23, 0.99}, {24, 0.99}, {25, 0.99},
+        {26, 0.99}, {27, 0.99}, {28, 0.99}, {29, 0.99}, {30, 0.99},
+        {31, 0.99}, {32, 0.99}, {33, 0.99}, {34, 0.99}, {35, 0.99},
+        {36, 0.99}, {37, 0.99}, {38, 0.99}, {39, 0.99}, {40, 0.99},
+        {41, 0.99}, {42, 0.99}, {43, 0.99}, {44, 0.99}, {45, 0.99},
+        {46, 0.99}, {47, 0.99}, {48, 0.99}, {49, 0.99}, {50, 0.99}
     };
 
-    //  all 0.99
-    std::map<NodeID, double> map = {
-        {1, 0.99},
-        {2, 0.99},
-        {3, 0.99},
-        {4, 0.99},
-        {5, 0.99},
-        {6, 0.99},
-        {7, 0.99},
-        {8, 0.99},
-        {9, 0.99},
-        {10, 0.99},
-        {11, 0.99},
-        {12, 0.99},
-        {13, 0.99},
-        {14, 0.99},
-        {15, 0.99},
-        {16, 0.99},
-        {17, 0.99},
-        {18, 0.99},
-        {19, 0.99}
-    };
-
-    ProbabilityMap probaMap = ProbabilityMap(map);
-
-    // std::vector<SDPSets> resultSDPs = toSDPSet(1, 2, pathSets);
-    // for (const auto &sdpSet : resultSDPs) {
-    //     std::cout << "SDP Set: ";
-    //     for (const auto &sdp : sdpSet) {
-    //         std::cout << sdp << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
-
-    double availability = evalAvail(1, 2, probaMap, pathSets);
-    std::cout << "Availability: " << availability << std::endl;
-
-    double parallelAvailability = evalAvailParallel(1, 2, probaMap, pathSets);
-    std::cout << "Parallel Availability: " << parallelAvailability << std::endl;
-    return 0;
+    double availability = SDPSetToAvail(probaMap, sdpSets);
+    std::cout << "Calculated availability: " << availability << std::endl;
 }

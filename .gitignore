@@ -20,4 +20,4 @@ topologies/Germany_50/Pathset_Germany_50.csv
 
 scalability/*
 
-# *.egg-info/
+*.egg-info/

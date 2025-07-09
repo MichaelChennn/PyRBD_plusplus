@@ -24,6 +24,12 @@ conda install -c conda-forge gcc_linux-64=11 gxx_linux-64=11
 ## Install CPP Dependencies
 
 ```bash
-chmod +x rebuild.sh
-./rebuild.sh
+chmod +x build.sh
+./build.sh
 ```
+
+## Run Demo
+
+```bash
+python demo.py
+``` 

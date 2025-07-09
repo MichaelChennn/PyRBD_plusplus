@@ -35,6 +35,23 @@ namespace pyrbdpp
             }
         }
 
+        ProbabilityMap(std::initializer_list<std::pair<const int, double>> init_list)
+        {
+            int max_id = 0;
+            for (const auto& pair : init_list) {
+                max_id = std::max(max_id, pair.first);
+            }
+            
+            pos_array.resize(max_id + 1);
+            neg_array.resize(max_id + 1);
+
+            for (const auto &pair : init_list)
+            {
+                pos_array[pair.first] = pair.second;
+                neg_array[pair.first] = 1 - pair.second;
+            }
+        }
+
         double operator[](int i) const
         {
             if (std::abs(i) > pos_array.size())
